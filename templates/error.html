@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}请求未完成 · WeRSS{% endblock %}
+{% block content %}
+<section class="error-state">
+  <span class="error-mark" aria-hidden="true">!</span>
+  <span class="eyebrow">请求未完成</span>
+  <h1>遇到了一点问题</h1>
+  <p>{{ error }}</p>
+  <div class="form-actions centered"><a class="button primary" href="/">返回订阅首页</a><a class="button" href="/settings">检查账号设置</a></div>
+</section>
+{% endblock %}

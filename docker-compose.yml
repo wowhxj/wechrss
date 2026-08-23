@@ -1,0 +1,29 @@
+services:
+  wechat-mp-fetcher:
+    build: .
+    restart: unless-stopped
+    environment:
+      # 推荐 Web 扫码登录；这些变量只为兼容旧版手工凭证。
+      WEREAD_ACCESS_TOKEN: ${WEREAD_ACCESS_TOKEN:-}
+      WEREAD_VID: ${WEREAD_VID:-}
+      WEREAD_REFRESH_TOKEN: ${WEREAD_REFRESH_TOKEN:-}
+      WEREAD_DEVICE_ID: ${WEREAD_DEVICE_ID:-}
+      WEREAD_PROFILE: ${WEREAD_PROFILE:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      WECHAT_MP_DATA: /app/data
+      WECHAT_MP_DB: /app/data/wechat_mp.db
+      WECHAT_MP_CREDENTIALS: /app/data/credentials.json
+      WEREAD_MIN_INTERVAL: ${WEREAD_MIN_INTERVAL:-2}
+      HTTP_TIMEOUT: ${HTTP_TIMEOUT:-20}
+      WEREAD_QR_DEADLINE_SECONDS: ${WEREAD_QR_DEADLINE_SECONDS:-300}
+      SCHEDULER_POLL_SECONDS: ${SCHEDULER_POLL_SECONDS:-30}
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=5)"]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 20s

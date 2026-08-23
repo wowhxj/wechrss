@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}添加公众号 · WeRSS{% endblock %}
+{% block content %}
+<nav class="breadcrumb" aria-label="面包屑"><a href="/">公众号订阅</a><span aria-hidden="true">/</span><span>添加公众号</span></nav>
+<section class="page-heading">
+  <span class="eyebrow">新建订阅</span>
+  <h1>添加一个公众号</h1>
+  <p>找一篇这个公众号的文章，把链接粘贴到这里即可。</p>
+</section>
+
+<div class="form-layout">
+  <form class="card form-card" method="post" action="/sources" data-loading-form data-loading-label="正在识别…">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="field-group">
+      <label for="source">公众号文章链接 <span class="required">必填</span></label>
+      <div class="input-leading">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8 12 12 8M6.2 14.8l-1 1a3 3 0 0 1-4.2-4.2l3-3a3 3 0 0 1 4.2 0M13.8 5.2l1-1A3 3 0 0 1 19 8.4l-3 3a3 3 0 0 1-4.2 0"/></svg>
+        <input id="source" name="source" required autofocus autocomplete="off" placeholder="https://mp.weixin.qq.com/s/..." aria-describedby="source-help">
+      </div>
+      <p class="field-help" id="source-help">也支持直接填写 <code>MP_WXS_*</code> 或数字 BID。</p>
+    </div>
+
+    <div class="field-group">
+      <label for="name">显示名称 <span class="optional">选填</span></label>
+      <input id="name" name="name" maxlength="120" autocomplete="off" placeholder="留空时会尽量自动识别">
+    </div>
+
+    <div class="field-row">
+      <div class="field-group">
+        <label for="interval">同步频率</label>
+        <select id="interval" name="interval_minutes">
+          <option value="180">每 3 小时</option>
+          <option value="360" selected>每 6 小时</option>
+          <option value="720">每 12 小时</option>
+          <option value="1440">每天</option>
+          <option value="4320">每 3 天</option>
+        </select>
+      </div>
+      <div class="field-group">
+        <label for="rss-limit">Feed 保留文章</label>
+        <select id="rss-limit" name="rss_limit">
+          <option value="20">最近 20 篇</option>
+          <option value="50" selected>最近 50 篇</option>
+          <option value="100">最近 100 篇</option>
+          <option value="200">最近 200 篇</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <a class="button" href="/">取消</a>
+      <button class="button primary" type="submit">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>
+        识别并添加
+      </button>
+    </div>
+  </form>
+
+  <aside class="guide-card">
+    <div class="guide-visual" aria-hidden="true">
+      <span class="mini-phone"><i></i><i></i><i></i></span>
+      <svg viewBox="0 0 32 20"><path d="M2 10h24M21 5l5 5-5 5"/></svg>
+      <span class="mini-rss"><svg viewBox="0 0 24 24"><circle cx="6" cy="18" r="2"/><path d="M4 11a9 9 0 0 1 9 9M4 5a15 15 0 0 1 15 15"/></svg></span>
+    </div>
+    <h2>三步完成订阅</h2>
+    <ol class="steps">
+      <li><span>1</span><div><strong>复制文章链接</strong><p>在微信中打开任意一篇公众号文章，点击右上角复制链接。</p></div></li>
+      <li><span>2</span><div><strong>粘贴并识别</strong><p>系统从公开页面识别公众号名称和 Book ID。</p></div></li>
+      <li><span>3</span><div><strong>加入 RSS 阅读器</strong><p>添加成功后复制 Feed 地址，放进你常用的阅读器。</p></div></li>
+    </ol>
+    <div class="privacy-note"><strong>隐私说明</strong><p>数据和登录凭证仅保存在你的部署环境中。</p></div>
+  </aside>
+</div>
+{% endblock %}

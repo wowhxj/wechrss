@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}公众号订阅 · WeRSS{% endblock %}
+{% block content %}
+<section class="page-heading heading-with-action">
+  <div>
+    <span class="eyebrow">内容工作台</span>
+    <h1>公众号订阅</h1>
+    <p>集中收取微信公众号文章，生成干净、稳定的 RSS Feed。</p>
+  </div>
+  <a class="button primary" href="/sources/new">
+    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>
+    添加公众号
+  </a>
+</section>
+
+{% if not credential_status.configured %}
+<section class="setup-banner">
+  <div class="setup-icon" aria-hidden="true">
+    <svg viewBox="0 0 24 24"><path d="M5 7.5h14v9h-8l-6 4v-13Z"/><path d="m15.5 6 2 2 3.5-4"/></svg>
+  </div>
+  <div><strong>先连接微信读书账号</strong><p>扫码登录后即可同步文章，通常不到一分钟。</p></div>
+  <a class="button subtle" href="/settings#login">去连接 <span aria-hidden="true">→</span></a>
+</section>
+{% endif %}
+
+{% set article_total = sources|sum(attribute='article_count') %}
+<section class="metric-grid" aria-label="订阅概览">
+  <article class="metric-card">
+    <span class="metric-icon green" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M4 4.5h12v12H4zM7 7h6M7 10h6M7 13h4"/></svg></span>
+    <div><strong>{{ sources|length }}</strong><span>公众号</span></div>
+  </article>
+  <article class="metric-card">
+    <span class="metric-icon blue" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M5 3.5h8l3 3v10H5zM13 3.5v3h3M8 10h5M8 13h5"/></svg></span>
+    <div><strong>{{ article_total }}</strong><span>已收录文章</span></div>
+  </article>
+  <article class="metric-card">
+    <span class="metric-icon amber" aria-hidden="true"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="6.5"/><path d="M10 6v4l3 2"/></svg></span>
+    <div><strong>{{ '运行中' if scheduler_enabled else '已暂停' }}</strong><span>自动同步</span></div>
+  </article>
+  <article class="metric-card">
+    <span class="metric-icon violet" aria-hidden="true"><svg viewBox="0 0 20 20"><circle cx="10" cy="7" r="3"/><path d="M4.5 17c.6-3 2.4-4.5 5.5-4.5S15 14 15.5 17"/></svg></span>
+    <div><strong>{{ credential_status.name or credential_status.vid or '未连接' }}</strong><span>微信读书账号</span></div>
+  </article>
+</section>
+
+<section class="card">
+  <div class="card-header">
+    <div><h2>我的订阅</h2><p>每个公众号都有独立的同步频率和 Feed 地址</p></div>
+    {% if sources %}<span class="count-chip">{{ sources|length }} 个订阅</span>{% endif %}
+  </div>
+  {% if sources %}
+  <div class="source-list">
+    {% for s in sources %}
+    <article class="source-item">
+      <a class="source-main" href="/sources/{{ s.id }}" aria-label="查看 {{ s.name or s.book_id }}">
+        <span class="source-avatar">{{ (s.name or '公')[:1] }}</span>
+        <span class="source-copy">
+          <span class="source-title-line"><strong>{{ s.name or s.book_id }}</strong><span class="badge {{ s.last_status }}">{{ status_label(s.last_status) }}</span>{% if not s.enabled %}<span class="badge paused">已暂停</span>{% endif %}</span>
+          <span class="source-meta">{{ s.article_count }} 篇文章 <i>·</i> {{ fmt_interval(s.sync_interval_minutes) }}同步</span>
+        </span>
+      </a>
+      <div class="source-schedule">
+        <span>{{ '下次同步' if s.enabled else '自动同步' }}</span>
+        <strong title="{{ fmt_ts(s.next_sync_at) }}">{{ fmt_relative_ts(s.next_sync_at) if s.enabled else '已暂停' }}</strong>
+      </div>
+      <div class="source-actions">
+        <button class="icon-button" type="button" data-copy="{{ base_url }}/feeds/{{ s.id }}.xml" aria-label="复制 {{ s.name or s.book_id }} 的 RSS 地址" title="复制 RSS 地址">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="6.5" y="6.5" width="9" height="9" rx="1.5"/><path d="M4 13.5H3.5a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1V4"/></svg>
+        </button>
+        <a class="icon-button" href="/sources/{{ s.id }}" aria-label="打开订阅详情" title="查看详情">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m7 4 6 6-6 6"/></svg>
+        </a>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <span class="empty-illustration" aria-hidden="true"><svg viewBox="0 0 64 64"><path d="M17 18h30v24H28L17 50V18Z"/><path d="M25 26h14M25 33h10"/></svg></span>
+    <h3>从一个常读的公众号开始</h3>
+    <p>粘贴任意一篇公众号文章链接，我们会自动识别并创建 RSS。</p>
+    <a class="button primary" href="/sources/new">添加第一个公众号</a>
+  </div>
+  {% endif %}
+</section>
+
+{% if runs %}
+<section class="card">
+  <div class="card-header"><div><h2>最近同步</h2><p>查看最近的任务结果与异常</p></div></div>
+  <div class="activity-list">
+    {% for r in runs %}
+    <div class="activity-item">
+      <span class="activity-dot {{ r.status }}" aria-hidden="true"></span>
+      <div class="activity-copy"><strong>{{ r.name or r.book_id }}</strong><span>{{ '新增 ' ~ r.new_count ~ ' 篇，收到 ' ~ r.received ~ ' 篇' if r.status == 'ok' else (r.message or status_label(r.status)) }}</span></div>
+      <span class="badge {{ r.status }}">{{ status_label(r.status) }}</span>
+      <time datetime="{{ fmt_ts(r.started_at) }}" title="{{ fmt_ts(r.started_at) }}">{{ fmt_relative_ts(r.started_at) }}</time>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}{{ article.title }} · WeRSS{% endblock %}
+{% block content %}
+<nav class="breadcrumb" aria-label="面包屑"><a href="/">公众号订阅</a><span aria-hidden="true">/</span><span>文章阅读</span></nav>
+<article class="reader">
+  <header class="reader-header">
+    {% if article.author %}<span class="reader-author">{{ article.author }}</span>{% endif %}
+    <h1>{{ article.title }}</h1>
+    <div class="reader-meta"><time title="{{ fmt_ts(article.publish_at) }}">{{ fmt_ts(article.publish_at) }}</time></div>
+    <div class="reader-actions">
+      {% if article.url %}
+      <a class="button primary" href="{{ article.url }}" target="_blank" rel="noreferrer">打开微信原文 <span aria-hidden="true">↗</span></a>
+      <button class="button" type="button" data-copy="{{ article.url }}"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="6.5" y="6.5" width="9" height="9" rx="1.5"/><path d="M4 13.5H3.5a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1V4"/></svg>复制链接</button>
+      {% else %}
+      <form method="post" action="/articles/{{ article.review_id }}/resolve-url" data-loading-form data-loading-label="补全中…"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="button" type="submit">补全原文链接</button></form>
+      {% endif %}
+    </div>
+  </header>
+  <div class="reader-divider"></div>
+  {% if article.content_html %}
+  <div class="wechat-content">{{ article.content_html|safe }}</div>
+  {% else %}
+  {% if article.summary %}<p class="reader-summary">{{ article.summary }}</p>{% else %}<p class="reader-summary">请点击上方“打开微信原文”阅读全文。</p>{% endif %}
+  {% endif %}
+</article>
+{% endblock %}
