@@ -551,38 +551,48 @@ class SyncService:
         self.db.set_article_url(review_id, url)
         return url
 
-    def backfill_source_urls(self, source_id: int, limit: int = 5) -> tuple[int, int]:
+    def backfill_source_urls(self, source_id: int, limit: int | None = 5) -> tuple[int, int]:
+        """limit=None 表示持续补，直到这个公众号没有缺链接的文章为止（每批仍串行+随机等待）。"""
         source = self.db.get_source(source_id)
         if not source:
             raise FetcherError("公众号不存在")
-        missing = self.db.missing_url_articles(source.book_id, limit=limit)
-        if not missing:
-            return 0, 0
         resolved = 0
         failed = 0
         # 复用同一个 client 让限速器状态跨请求生效；否则每篇文章都新建 client，
         # RateLimiter 从零计时，等于没有限速。
         client = self._client_for(self.credentials.get_record())
-        for i, article in enumerate(missing):
-            if i > 0:
-                time.sleep(random.uniform(8, 12))
-            try:
-                url = client.resolve_article_url(article.review_id)
-            except AuthExpiredError:
-                # 与 _get_articles_with_auto_refresh 一致：只刷新+重试一次，
-                # 刷新失败或重试仍失效说明整个会话坏了，直接抛出去，不要当成单篇失败吞掉。
-                client = self._client_for(self.refresh_credentials())
-                url = client.resolve_article_url(article.review_id)
-            except RiskControlError:
-                raise
-            except Exception:
-                failed += 1
-                continue
-            if url:
-                self.db.set_article_url(article.review_id, url)
-                resolved += 1
-            else:
-                failed += 1
+        is_first_request = True
+        while True:
+            batch = self.db.missing_url_articles(source.book_id, limit=limit if limit is not None else 20)
+            if not batch:
+                break
+            batch_resolved = 0
+            for article in batch:
+                if not is_first_request:
+                    time.sleep(random.uniform(8, 12))
+                is_first_request = False
+                try:
+                    url = client.resolve_article_url(article.review_id)
+                except AuthExpiredError:
+                    # 与 _get_articles_with_auto_refresh 一致：只刷新+重试一次，
+                    # 刷新失败或重试仍失效说明整个会话坏了，直接抛出去，不要当成单篇失败吞掉。
+                    client = self._client_for(self.refresh_credentials())
+                    url = client.resolve_article_url(article.review_id)
+                except RiskControlError:
+                    raise
+                except Exception:
+                    failed += 1
+                    continue
+                if url:
+                    self.db.set_article_url(article.review_id, url)
+                    resolved += 1
+                    batch_resolved += 1
+                else:
+                    failed += 1
+            if limit is not None or batch_resolved == 0:
+                # 有限批次（手动按钮）只跑一批；持续模式下一批一个都没成功
+                # 说明剩下的都解析不出来，停止以免死循环重试同一批文章。
+                break
         return resolved, failed
 
     def feed_bytes(self, source_id: int, base_url: str = "") -> bytes:
@@ -622,7 +632,7 @@ class Scheduler:
                     try:
                         result = self.service.sync_source(source.id)
                         if result.status == "ok":
-                            self.service.backfill_source_urls(source.id)
+                            self.service.backfill_source_urls(source.id, limit=None)
                     except Exception:
                         # 单个任务不能让后台调度线程退出；具体同步/补链接错误由 SyncService 记录。
                         pass
