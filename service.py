@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import sqlite3
 import threading
 import time
@@ -559,17 +560,28 @@ class SyncService:
             return 0, 0
         resolved = 0
         failed = 0
-        for article in missing:
+        # 复用同一个 client 让限速器状态跨请求生效；否则每篇文章都新建 client，
+        # RateLimiter 从零计时，等于没有限速。
+        client = self._client_for(self.credentials.get_record())
+        for i, article in enumerate(missing):
+            if i > 0:
+                time.sleep(random.uniform(8, 12))
             try:
-                url = self._resolve_url_with_auto_refresh(article.review_id)
-                if url:
-                    self.db.set_article_url(article.review_id, url)
-                    resolved += 1
-                else:
-                    failed += 1
-            except (RiskControlError, AuthExpiredError):
+                url = client.resolve_article_url(article.review_id)
+            except AuthExpiredError:
+                # 与 _get_articles_with_auto_refresh 一致：只刷新+重试一次，
+                # 刷新失败或重试仍失效说明整个会话坏了，直接抛出去，不要当成单篇失败吞掉。
+                client = self._client_for(self.refresh_credentials())
+                url = client.resolve_article_url(article.review_id)
+            except RiskControlError:
                 raise
             except Exception:
+                failed += 1
+                continue
+            if url:
+                self.db.set_article_url(article.review_id, url)
+                resolved += 1
+            else:
                 failed += 1
         return resolved, failed
 
@@ -608,8 +620,10 @@ class Scheduler:
                     if self._stop.is_set():
                         break
                     try:
-                        self.service.sync_source(source.id)
+                        result = self.service.sync_source(source.id)
+                        if result.status == "ok":
+                            self.service.backfill_source_urls(source.id)
                     except Exception:
-                        # 单个任务不能让后台调度线程退出；具体同步错误由 SyncService 记录。
+                        # 单个任务不能让后台调度线程退出；具体同步/补链接错误由 SyncService 记录。
                         pass
             self._stop.wait(self.poll_seconds)
