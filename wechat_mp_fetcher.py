@@ -445,6 +445,14 @@ def save_article(conn: sqlite3.Connection, article: Article) -> None:
             author=CASE WHEN excluded.author<>'' THEN excluded.author ELSE articles.author END,
             content_html=CASE WHEN excluded.content_html<>'' THEN excluded.content_html ELSE articles.content_html END,
             raw_json=excluded.raw_json, fetched_at=excluded.fetched_at
+        WHERE
+            articles.title<>excluded.title OR articles.summary<>excluded.summary OR
+            articles.cover_url<>excluded.cover_url OR
+            (excluded.url<>'' AND articles.url<>excluded.url) OR
+            articles.publish_at<>excluded.publish_at OR articles.original_id<>excluded.original_id OR
+            articles.read_num<>excluded.read_num OR articles.like_num<>excluded.like_num OR
+            (excluded.author<>'' AND articles.author<>excluded.author) OR
+            (excluded.content_html<>'' AND articles.content_html<>excluded.content_html)
         """,
         (
             article.review_id, article.book_id, article.title, article.summary, article.cover_url, article.url,

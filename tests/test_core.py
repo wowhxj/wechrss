@@ -257,3 +257,22 @@ def test_resync_does_not_wipe_backfilled_url(tmp_path):
     conn.commit()
     row = conn.execute("SELECT url FROM articles WHERE review_id='r-1'").fetchone()
     assert row[0] == "https://mp.weixin.qq.com/s/backfilled"
+
+
+def test_resave_unchanged_article_skips_write(tmp_path):
+    conn = open_db(tmp_path / "db.sqlite")
+    save_article(conn, Article("r-2", "MP_WXS_1", "标题", summary="摘要", publish_at=1700000000))
+    conn.commit()
+
+    # 同一批数据再存一次（模拟下次同步又抓到同一篇、内容没变）：不应该触发写入。
+    changes_before = conn.total_changes
+    save_article(conn, Article("r-2", "MP_WXS_1", "标题", summary="摘要", publish_at=1700000000))
+    conn.commit()
+    assert conn.total_changes == changes_before
+
+    # 内容真的变了（比如摘要更新），应该正常写入。
+    save_article(conn, Article("r-2", "MP_WXS_1", "标题", summary="新摘要", publish_at=1700000000))
+    conn.commit()
+    assert conn.total_changes > changes_before
+    row = conn.execute("SELECT summary FROM articles WHERE review_id='r-2'").fetchone()
+    assert row[0] == "新摘要"
