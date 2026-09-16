@@ -295,7 +295,10 @@ class WebApp:
                 source_id = int(m.group(1))
                 result = self.service.sync_source(source_id)
                 if result.status == "ok":
-                    msg = f"同步完成：收到 {result.received}，新增 {result.new_count}"
+                    resolved, failed = self.service.backfill_source_urls(source_id, limit=None)
+                    msg = f"同步完成：收到 {result.received}，新增 {result.new_count}；原文链接补全 {resolved} 篇"
+                    if failed:
+                        msg += f"，{failed} 篇解析失败"
                     return self._redirect(start_response, f"/sources/{source_id}?message={quote(msg)}")
                 return self._redirect(start_response, f"/sources/{source_id}?error={quote(result.message or result.status)}")
 

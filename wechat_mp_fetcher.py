@@ -439,7 +439,8 @@ def save_article(conn: sqlite3.Connection, article: Article) -> None:
         ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(review_id) DO UPDATE SET
             title=excluded.title, summary=excluded.summary, cover_url=excluded.cover_url,
-            url=excluded.url, publish_at=excluded.publish_at, original_id=excluded.original_id,
+            url=CASE WHEN excluded.url<>'' THEN excluded.url ELSE articles.url END,
+            publish_at=excluded.publish_at, original_id=excluded.original_id,
             read_num=excluded.read_num, like_num=excluded.like_num,
             author=CASE WHEN excluded.author<>'' THEN excluded.author ELSE articles.author END,
             content_html=CASE WHEN excluded.content_html<>'' THEN excluded.content_html ELSE articles.content_html END,

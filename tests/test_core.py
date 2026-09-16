@@ -2,8 +2,10 @@ from wechat_mp_fetcher import (
     Article,
     book_id_from_article_url,
     decode_biz,
+    open_db,
     parse_articles_payload,
     render_rss,
+    save_article,
 )
 
 
@@ -244,3 +246,14 @@ def test_review_single_resolves_doc_url():
     assert url.endswith("/review/single")
     assert params["reviewId"] == "r-url-1"
     assert params["synckey"] == 0
+
+
+def test_resync_does_not_wipe_backfilled_url(tmp_path):
+    conn = open_db(tmp_path / "db.sqlite")
+    save_article(conn, Article("r-1", "MP_WXS_1", "标题", publish_at=1700000000, url="https://mp.weixin.qq.com/s/backfilled"))
+    conn.commit()
+    # 模拟同步接口返回的文章：不带 url（同步接口本身不提供原文链接）。
+    save_article(conn, Article("r-1", "MP_WXS_1", "标题", publish_at=1700000000))
+    conn.commit()
+    row = conn.execute("SELECT url FROM articles WHERE review_id='r-1'").fetchone()
+    assert row[0] == "https://mp.weixin.qq.com/s/backfilled"
