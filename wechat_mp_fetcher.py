@@ -8,6 +8,7 @@ import json
 import os
 import sqlite3
 import sys
+import threading
 import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -208,16 +209,20 @@ class RateLimiter:
     def __init__(self, min_interval: float) -> None:
         self.min_interval = max(float(min_interval), 0.0)
         self.last = 0.0
+        self._lock = threading.Lock()
 
     def wait(self) -> None:
-        if not self.last:
+        # 持锁跨越 sleep：多线程共享同一个 limiter 时，等待中的线程会排队，
+        # 而不是都读到"不用等"然后一起发出去。
+        with self._lock:
+            if not self.last:
+                self.last = time.monotonic()
+                return
+            elapsed = time.monotonic() - self.last
+            remaining = self.min_interval - elapsed
+            if remaining > 0:
+                time.sleep(remaining)
             self.last = time.monotonic()
-            return
-        elapsed = time.monotonic() - self.last
-        remaining = self.min_interval - elapsed
-        if remaining > 0:
-            time.sleep(remaining)
-        self.last = time.monotonic()
 
 
 class WeReadMobileClient:
@@ -229,6 +234,7 @@ class WeReadMobileClient:
         timeout: float = 20.0,
         min_interval: float = 2.0,
         version_headers: dict[str, str] | None = None,
+        limiter: RateLimiter | None = None,
     ) -> None:
         if not access_token:
             raise FetcherError("缺少 accessToken")
@@ -236,7 +242,9 @@ class WeReadMobileClient:
             raise FetcherError("VID 必须是数字")
         self.session = requests.Session()
         self.timeout = timeout
-        self.limiter = RateLimiter(min_interval)
+        # 调用方（SyncService）可以传入一个跨请求共享的 limiter，让不同 client
+        # 实例之间也能真正遵守最小间隔；不传时退化为独立限速（CLI 一次性调用场景）。
+        self.limiter = limiter or RateLimiter(min_interval)
         headers = {
             "accessToken": access_token,
             "vid": str(vid),

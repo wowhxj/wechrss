@@ -18,6 +18,7 @@ from wechat_mp_fetcher import (
     Article,
     AuthExpiredError,
     FetcherError,
+    RateLimiter,
     RiskControlError,
     WeReadMobileClient,
     article_exists,
@@ -466,6 +467,9 @@ class SyncService:
         self.request_interval = max(float(request_interval), 2.0)
         self.timeout = timeout
         self.auth_client = auth_client or WeReadAuthClient(timeout=timeout)
+        # 所有到微信读书的请求（同步、补链接、单篇解析、续期）共用这一个限速器，
+        # 保证跨 client 实例、跨线程也有真实的最小间隔，而不是每次新建 client 就从零计时。
+        self._limiter = RateLimiter(self.request_interval)
         self._lock = threading.Lock()
         self._refresh_lock = threading.Lock()
 
@@ -477,6 +481,7 @@ class SyncService:
             timeout=self.timeout,
             min_interval=self.request_interval,
             version_headers=headers,
+            limiter=self._limiter,
         )
 
     def refresh_credentials(self) -> WeReadCredentials:
@@ -485,12 +490,17 @@ class SyncService:
         There is no retry loop: a failed refresh is surfaced to the caller so the UI can ask for
         a new QR login instead of hammering /login.
         """
+        stale_token = self.credentials.get_record().accessToken
         with self._refresh_lock:
             record = self.credentials.get_record()
+            if record.accessToken != stale_token:
+                # 排队等锁的时候，另一个线程已经把它刷新过了，直接用新的，不必再打一次续期请求。
+                return record
             if not record.can_refresh:
                 raise FetcherError("当前账号没有可用的 refreshToken/deviceId，请重新扫码登录")
             if not record.profile.startswith("eink"):
                 raise FetcherError("当前会话不是 Web 扫码创建的可续期会话，请重新扫码登录后再使用自动续期")
+            self._limiter.wait()
             try:
                 refreshed = self.auth_client.refresh(record)
             except WeReadAuthError as exc:

@@ -174,3 +174,46 @@ def test_sync_jitter_widens_next_sync_window(tmp_path: Path):
     after = int(time.time())
     updated = db.get_source(source.id)
     assert before + 60 * 60 <= updated.next_sync_at <= after + 90 * 60
+
+
+def test_client_for_shares_one_rate_limiter(tmp_path: Path):
+    from weread_auth import WeReadCredentials
+
+    db = AppDB(tmp_path / "db.sqlite")
+    creds = CredentialStore(tmp_path / "credentials.json")
+    creds.save_record(WeReadCredentials(vid="1", accessToken="token", refreshToken="r", deviceId="d"))
+    sync = SyncService(db, creds)
+    record = creds.get_record()
+    client_a = sync._client_for(record)
+    client_b = sync._client_for(record)
+    # 不同 client 实例必须共用同一个 limiter，跨请求的最小间隔才是真的全局生效。
+    assert client_a.limiter is client_b.limiter is sync._limiter
+
+
+def test_refresh_skips_redundant_call_when_already_refreshed(tmp_path: Path):
+    from weread_auth import WeReadCredentials
+
+    db = AppDB(tmp_path / "db.sqlite")
+    creds = CredentialStore(tmp_path / "credentials.json")
+    creds.save_record(WeReadCredentials(vid="1", accessToken="old", refreshToken="r", deviceId="d"))
+
+    class FakeAuth:
+        def refresh(self, record):
+            raise AssertionError("不应该真的发起续期请求")
+
+    sync = SyncService(db, creds, auth_client=FakeAuth())
+
+    # 模拟并发：本线程判断需要刷新时读到的是旧 token，但真正进锁后
+    # 发现已经被“另一个线程”刷新成了新 token。
+    calls = {"n": 0}
+    real_get_record = creds.get_record
+
+    def fake_get_record():
+        calls["n"] += 1
+        record = real_get_record()
+        record.accessToken = "old" if calls["n"] == 1 else "new-from-another-thread"
+        return record
+
+    sync.credentials.get_record = fake_get_record
+    result = sync.refresh_credentials()
+    assert result.accessToken == "new-from-another-thread"
