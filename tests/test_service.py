@@ -1,15 +1,16 @@
 import os
+import time
 from pathlib import Path
 
-from service import AppDB, CredentialStore, Scheduler, SyncService
+from service import AppDB, CredentialStore, Scheduler, SyncResult, SyncService
 from wechat_mp_fetcher import Article, save_article
 
 
 def test_source_crud_and_feed(tmp_path: Path):
     db = AppDB(tmp_path / "db.sqlite")
     source = db.add_source(source_value="MP_WXS_123", name="测试号", interval_minutes=10)
-    # Web 管理端强制最低 60 分钟。
-    assert source.sync_interval_minutes == 60
+    # Web 管理端强制最低 30 分钟。
+    assert source.sync_interval_minutes == 30
     with db.connect() as conn:
         save_article(conn, Article("r1", source.book_id, "文章1", url="https://example.com", publish_at=1700000000))
         conn.commit()
@@ -161,3 +162,15 @@ def test_backfill_missing_article_url(tmp_path: Path, monkeypatch):
     resolved, failed = sync.backfill_source_urls(source.id, limit=5)
     assert (resolved, failed) == (1, 0)
     assert db.article_by_review("r-missing").url == "https://mp.weixin.qq.com/s/backfilled-token"
+
+
+def test_sync_jitter_widens_next_sync_window(tmp_path: Path):
+    db = AppDB(tmp_path / "db.sqlite")
+    source = db.add_source(source_value="MP_WXS_222", name="抖动测试", interval_minutes=60, jitter_minutes=30)
+    assert source.sync_jitter_minutes == 30
+    run_id = db.mark_sync_start(source.id)
+    before = int(time.time())
+    db.mark_sync_finish(source, run_id, SyncResult(source.id, 0, 0, 0, "ok", ""))
+    after = int(time.time())
+    updated = db.get_source(source.id)
+    assert before + 60 * 60 <= updated.next_sync_at <= after + 90 * 60

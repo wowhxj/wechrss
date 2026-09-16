@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS sources (
     enabled INTEGER NOT NULL DEFAULT 1,
     fetch_content INTEGER NOT NULL DEFAULT 0,
     sync_interval_minutes INTEGER NOT NULL DEFAULT 360,
+    sync_jitter_minutes INTEGER NOT NULL DEFAULT 0,
     rss_limit INTEGER NOT NULL DEFAULT 50,
     last_sync_at INTEGER NOT NULL DEFAULT 0,
     next_sync_at INTEGER NOT NULL DEFAULT 0,
@@ -75,6 +76,7 @@ class Source:
     enabled: bool
     fetch_content: bool
     sync_interval_minutes: int
+    sync_jitter_minutes: int
     rss_limit: int
     last_sync_at: int
     next_sync_at: int
@@ -242,6 +244,9 @@ class AppDB:
             # v4.1 removes public-article body fetching from the Web product.
             # Keep the legacy column for database compatibility, but force it off.
             conn.execute("UPDATE sources SET fetch_content=0 WHERE fetch_content<>0")
+            columns = {row["name"] for row in conn.execute("PRAGMA table_info(sources)")}
+            if "sync_jitter_minutes" not in columns:
+                conn.execute("ALTER TABLE sources ADD COLUMN sync_jitter_minutes INTEGER NOT NULL DEFAULT 0")
             conn.commit()
 
     def connect(self) -> sqlite3.Connection:
@@ -255,7 +260,8 @@ class AppDB:
         return Source(
             id=row["id"], book_id=row["book_id"], name=row["name"], article_url=row["article_url"],
             enabled=bool(row["enabled"]), fetch_content=bool(row["fetch_content"]),
-            sync_interval_minutes=row["sync_interval_minutes"], rss_limit=row["rss_limit"],
+            sync_interval_minutes=row["sync_interval_minutes"], sync_jitter_minutes=row["sync_jitter_minutes"],
+            rss_limit=row["rss_limit"],
             last_sync_at=row["last_sync_at"], next_sync_at=row["next_sync_at"], last_status=row["last_status"],
             last_error=row["last_error"], created_at=row["created_at"], updated_at=row["updated_at"],
             article_count=row["article_count"] if "article_count" in row.keys() else 0,
@@ -293,7 +299,7 @@ class AppDB:
         return self._row_to_source(row) if row else None
 
     def add_source(self, *, source_value: str, name: str = "", interval_minutes: int = 360,
-                   fetch_content: bool = False, rss_limit: int = 50) -> Source:
+                   jitter_minutes: int = 0, fetch_content: bool = False, rss_limit: int = 50) -> Source:
         source_value = source_value.strip()
         if source_value.startswith("http://") or source_value.startswith("https://"):
             try:
@@ -307,18 +313,20 @@ class AppDB:
         else:
             book_id = normalize_book_id(source_value)
             article_url = ""
-        interval_minutes = max(60, min(int(interval_minutes), 10080))
+        interval_minutes = max(30, min(int(interval_minutes), 10080))
+        jitter_minutes = max(0, min(int(jitter_minutes), interval_minutes))
         rss_limit = max(10, min(int(rss_limit), 500))
         now = int(time.time())
         with self.connect() as conn:
             try:
                 cur = conn.execute(
                     """
-                    INSERT INTO sources(book_id,name,article_url,enabled,fetch_content,sync_interval_minutes,rss_limit,
+                    INSERT INTO sources(book_id,name,article_url,enabled,fetch_content,sync_interval_minutes,
+                                        sync_jitter_minutes,rss_limit,
                                         last_sync_at,next_sync_at,last_status,last_error,created_at,updated_at)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
-                    (book_id, name.strip(), article_url, 1, 0, interval_minutes, rss_limit,
+                    (book_id, name.strip(), article_url, 1, 0, interval_minutes, jitter_minutes, rss_limit,
                      0, now, "never", "", now, now),
                 )
                 conn.commit()
@@ -330,11 +338,12 @@ class AppDB:
         return result
 
     def update_source(self, source_id: int, *, name: str, interval_minutes: int, fetch_content: bool,
-                      rss_limit: int, enabled: bool | None = None) -> None:
-        interval_minutes = max(60, min(int(interval_minutes), 10080))
+                      rss_limit: int, jitter_minutes: int = 0, enabled: bool | None = None) -> None:
+        interval_minutes = max(30, min(int(interval_minutes), 10080))
+        jitter_minutes = max(0, min(int(jitter_minutes), interval_minutes))
         rss_limit = max(10, min(int(rss_limit), 500))
-        fields = ["name=?", "sync_interval_minutes=?", "fetch_content=?", "rss_limit=?", "updated_at=?"]
-        values: list[Any] = [name.strip(), interval_minutes, 0, rss_limit, int(time.time())]
+        fields = ["name=?", "sync_interval_minutes=?", "sync_jitter_minutes=?", "fetch_content=?", "rss_limit=?", "updated_at=?"]
+        values: list[Any] = [name.strip(), interval_minutes, jitter_minutes, 0, rss_limit, int(time.time())]
         if enabled is not None:
             fields.append("enabled=?")
             values.append(int(enabled))
@@ -381,7 +390,8 @@ class AppDB:
 
     def mark_sync_finish(self, source: Source, run_id: int, result: SyncResult) -> None:
         now = int(time.time())
-        next_at = now + source.sync_interval_minutes * 60 if source.enabled else 0
+        jitter_seconds = random.randint(0, source.sync_jitter_minutes * 60) if source.sync_jitter_minutes > 0 else 0
+        next_at = now + source.sync_interval_minutes * 60 + jitter_seconds if source.enabled else 0
         with self.connect() as conn:
             conn.execute(
                 "UPDATE sync_runs SET finished_at=?,status=?,received=?,new_count=?,content_blocked=?,message=? WHERE id=?",

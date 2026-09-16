@@ -263,6 +263,7 @@ class WebApp:
                 src = self.db.add_source(
                     source_value=form.get("source", ""), name=form.get("name", ""),
                     interval_minutes=int(form.get("interval_minutes") or 360),
+                    jitter_minutes=int(form.get("jitter_minutes") or 0),
                     fetch_content=False, rss_limit=int(form.get("rss_limit") or 50),
                 )
                 return self._redirect(start_response, f"/sources/{src.id}?message={quote('公众号已添加')}")
@@ -285,6 +286,7 @@ class WebApp:
                 source_id = int(m.group(1))
                 self.db.update_source(
                     source_id, name=form.get("name", ""), interval_minutes=int(form.get("interval_minutes") or 360),
+                    jitter_minutes=int(form.get("jitter_minutes") or 0),
                     fetch_content=False, rss_limit=int(form.get("rss_limit") or 50),
                 )
                 return self._redirect(start_response, f"/sources/{source_id}?message={quote('设置已保存')}")

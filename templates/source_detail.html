@@ -86,7 +86,12 @@
       <input type="hidden" name="csrf" value="{{ csrf }}">
       <div class="field-row">
         <div class="field-group"><label for="name">显示名称</label><input id="name" name="name" maxlength="120" value="{{ source.name }}"></div>
-        <div class="field-group"><label for="interval">同步间隔（分钟）</label><input id="interval" type="number" min="60" max="10080" name="interval_minutes" value="{{ source.sync_interval_minutes }}"></div>
+        <div class="field-group"><label for="interval">同步间隔（分钟）</label><input id="interval" type="number" min="30" max="10080" name="interval_minutes" value="{{ source.sync_interval_minutes }}"></div>
+      </div>
+      <div class="field-group">
+        <label for="jitter">随机延迟（分钟）</label>
+        <input id="jitter" type="number" min="0" max="{{ source.sync_interval_minutes }}" name="jitter_minutes" value="{{ source.sync_jitter_minutes }}">
+        <p class="field-help">在同步间隔基础上再随机增加 0-N 分钟，避免多个公众号在同一时间点集中请求。填 0 表示不启用。</p>
       </div>
       <div class="field-group"><label for="limit">Feed 文章上限</label><input id="limit" type="number" min="10" max="500" name="rss_limit" value="{{ source.rss_limit }}"></div>
       <button class="button" type="submit">保存设置</button>
