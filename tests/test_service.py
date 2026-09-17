@@ -176,6 +176,27 @@ def test_sync_jitter_widens_next_sync_window(tmp_path: Path):
     assert before + 60 * 60 <= updated.next_sync_at <= after + 90 * 60
 
 
+def test_risk_control_pauses_auto_sync_until_manual_success(tmp_path: Path):
+    db = AppDB(tmp_path / "db.sqlite")
+    source = db.add_source(source_value="MP_WXS_333", name="风控暂停测试", interval_minutes=60)
+
+    run_id = db.mark_sync_start(source.id)
+    db.mark_sync_finish(source, run_id, SyncResult(source.id, 0, 0, 0, "risk_control", "微信读书返回风控/限频错误 -2041: -2041"))
+    paused = db.get_source(source.id)
+    assert paused.enabled is False
+    assert paused.next_sync_at == 0
+    # 暂停之后不应该再出现在调度器的待同步列表里。
+    assert paused.id not in {s.id for s in db.due_sources()}
+
+    # 用户手动同步成功，视为确认账号已经恢复，自动同步重新打开。
+    source = db.get_source(source.id)
+    run_id = db.mark_sync_start(source.id)
+    db.mark_sync_finish(source, run_id, SyncResult(source.id, 5, 5, 0, "ok", ""))
+    recovered = db.get_source(source.id)
+    assert recovered.enabled is True
+    assert recovered.next_sync_at > int(time.time())
+
+
 def test_client_for_shares_one_rate_limiter(tmp_path: Path):
     from weread_auth import WeReadCredentials
 

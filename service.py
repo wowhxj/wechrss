@@ -391,16 +391,24 @@ class AppDB:
 
     def mark_sync_finish(self, source: Source, run_id: int, result: SyncResult) -> None:
         now = int(time.time())
+        # 触发风控就暂停自动同步，不能照常按间隔继续戳同一个账号；账号一旦恢复、
+        # 手动同步成功了，就当作确认可以正常用了，自动恢复。其他错误状态不动 enabled。
+        if result.status == "risk_control":
+            enabled = False
+        elif result.status == "ok":
+            enabled = True
+        else:
+            enabled = source.enabled
         jitter_seconds = random.randint(0, source.sync_jitter_minutes * 60) if source.sync_jitter_minutes > 0 else 0
-        next_at = now + source.sync_interval_minutes * 60 + jitter_seconds if source.enabled else 0
+        next_at = now + source.sync_interval_minutes * 60 + jitter_seconds if enabled else 0
         with self.connect() as conn:
             conn.execute(
                 "UPDATE sync_runs SET finished_at=?,status=?,received=?,new_count=?,content_blocked=?,message=? WHERE id=?",
                 (now, result.status, result.received, result.new_count, result.content_blocked, result.message[:2000], run_id),
             )
             conn.execute(
-                """UPDATE sources SET last_sync_at=?,next_sync_at=?,last_status=?,last_error=?,updated_at=? WHERE id=?""",
-                (now, next_at, result.status, result.message[:2000] if result.status != "ok" else "", now, source.id),
+                """UPDATE sources SET enabled=?,last_sync_at=?,next_sync_at=?,last_status=?,last_error=?,updated_at=? WHERE id=?""",
+                (int(enabled), now, next_at, result.status, result.message[:2000] if result.status != "ok" else "", now, source.id),
             )
             conn.commit()
 
